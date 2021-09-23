@@ -601,6 +601,37 @@ makeFuncCall(List *name, List *args, CoercionForm funcformat, int location)
 }
 
 /*
+ * makeUDOCall -
+ *
+ * Initialize a FuncCall for a UDO call.
+ */
+FuncCall *
+makeUDOCall(List *name, List *args, Node* table_arg, CoercionForm funcformat,
+			int location, int table_arg_location)
+{
+	FuncCall *n = makeNode(FuncCall);
+	SubLink *s = makeNode(SubLink);
+
+	s->subLinkType = UDO_SUBLINK;
+	s->subselect = table_arg;
+	s->location = table_arg_location;
+
+	n->funcname = name;
+	n->args = lappend(args, s);
+	n->agg_order = NIL;
+	n->agg_filter = NULL;
+	n->over = NULL;
+	n->agg_within_group = false;
+	n->agg_star = false;
+	n->agg_distinct = false;
+	n->func_variadic = false;
+	n->funcformat = funcformat;
+	n->location = location;
+
+	return n;
+}
+
+/*
  * make_opclause
  *	  Creates an operator clause given its operator info, left operand
  *	  and right operand (pass NULL to create single-operand clause),

@@ -75,8 +75,10 @@ OBJS = \
 	nodeValuesscan.o \
 	nodeWindowAgg.o \
 	nodeWorktablescan.o \
+	nodeUDO.o \
 	spi.o \
 	tqueue.o \
-	tstoreReceiver.o
+	tstoreReceiver.o \
+	udo.o
 
 include $(top_srcdir)/src/backend/common.mk

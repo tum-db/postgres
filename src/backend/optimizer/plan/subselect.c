@@ -2437,6 +2437,10 @@ finalize_plan(PlannerInfo *root, Plan *plan,
 			context.paramids = bms_add_members(context.paramids, scan_params);
 			break;
 
+		case T_UDO:
+			/* TODO UDO */
+			break;
+
 		case T_ValuesScan:
 			finalize_primnode((Node *) ((ValuesScan *) plan)->values_lists,
 							  &context);

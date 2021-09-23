@@ -1830,7 +1830,8 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 		sublink->testexpr = NULL;
 		sublink->operName = NIL;
 	}
-	else if (sublink->subLinkType == MULTIEXPR_SUBLINK)
+	else if (sublink->subLinkType == MULTIEXPR_SUBLINK ||
+			 sublink->subLinkType == UDO_SUBLINK)
 	{
 		/* Same as EXPR case, except no restriction on number of columns */
 		sublink->testexpr = NULL;

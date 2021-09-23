@@ -259,6 +259,15 @@ typedef struct ParamRef
 } ParamRef;
 
 /*
+ * GenericTableType - only used for return types of functions to indicate that
+ * the columns of the returned table will be determined for each call.
+ */
+typedef struct GenericTableType {
+	NodeTag		type;
+	int			location;		/* token location, or -1 if unknown */
+} GenericTableType;
+
+/*
  * A_Expr - infix, prefix, and postfix expressions
  */
 typedef enum A_Expr_Kind
@@ -370,6 +379,14 @@ typedef struct FuncCall
 	CoercionForm funcformat;	/* how to display this node */
 	int			location;		/* token location, or -1 if unknown */
 } FuncCall;
+
+/*
+ * UDOCall - the call to a UDO
+ */
+typedef struct UDOCall {
+	FuncCall   func_call;
+	Node	   *table_arg;		/* subquery for the table argument */
+} UDOCall;
 
 /*
  * A_Star - '*' representing all columns of a table or compound field
@@ -980,6 +997,7 @@ typedef enum RTEKind
 	RTE_JOIN,					/* join */
 	RTE_FUNCTION,				/* function in FROM */
 	RTE_TABLEFUNC,				/* TableFunc(.., column list) */
+	RTE_UDO,					/* Call to a UDO */
 	RTE_VALUES,					/* VALUES (<exprlist>), (<exprlist>), ... */
 	RTE_CTE,					/* common table expr (WITH list element) */
 	RTE_NAMEDTUPLESTORE,		/* tuplestore, e.g. for AFTER triggers */
@@ -2955,7 +2973,7 @@ typedef struct CreateFunctionStmt
 	bool		replace;		/* T => replace if already exists */
 	List	   *funcname;		/* qualified name of function to create */
 	List	   *parameters;		/* a list of FunctionParameter */
-	TypeName   *returnType;		/* the return type */
+	Node	   *returnType;		/* the return type */
 	List	   *options;		/* a list of DefElem */
 	Node	   *sql_body;
 } CreateFunctionStmt;

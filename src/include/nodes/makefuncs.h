@@ -81,6 +81,9 @@ extern FuncExpr *makeFuncExpr(Oid funcid, Oid rettype, List *args,
 
 extern FuncCall *makeFuncCall(List *name, List *args,
 							  CoercionForm funcformat, int location);
+extern FuncCall *makeUDOCall(List *name, List *args, Node* table_arg,
+							 CoercionForm funcformat, int location,
+							 int table_arg_location);
 
 extern Expr *make_opclause(Oid opno, Oid opresulttype, bool opretset,
 						   Expr *leftop, Expr *rightop,

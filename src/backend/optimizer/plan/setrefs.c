@@ -117,6 +117,9 @@ static Plan *set_subqueryscan_references(PlannerInfo *root,
 										 int rtoffset);
 static bool trivial_subqueryscan(SubqueryScan *plan);
 static Plan *clean_up_removed_plan_level(Plan *parent, Plan *child);
+static Plan *set_udo_references(PlannerInfo *root,
+								UDO *plan,
+								int rtoffset);
 static void set_foreignscan_references(PlannerInfo *root,
 									   ForeignScan *fscan,
 									   int rtoffset);
@@ -672,6 +675,9 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 								  rtoffset, 1);
 			}
 			break;
+		case T_UDO:
+			return set_udo_references(root, (UDO *) plan, rtoffset);
+			break;
 		case T_ValuesScan:
 			{
 				ValuesScan *splan = (ValuesScan *) plan;
@@ -1197,6 +1203,29 @@ set_subqueryscan_references(PlannerInfo *root,
 	}
 
 	return result;
+}
+
+static Plan *
+set_udo_references(PlannerInfo *root,
+				   UDO *udo,
+				   int rtoffset)
+{
+	Plan *plan = (Plan *) udo;
+	udo->plan.targetlist = fix_scan_list(root, udo->plan.targetlist,
+										 rtoffset, NUM_EXEC_TLIST(plan));
+	udo->plan.qual = fix_scan_list(root, udo->plan.qual,
+								   rtoffset, NUM_EXEC_QUAL(plan));
+	/* udo->funcExpr contains only constants (and the table argument which we
+	 * explicitly handle below), so this is not strictly necessary */
+	udo->funcExpr = fix_scan_expr(root, udo->funcExpr, rtoffset, 1);
+
+	if (udo->tableArgRelId > 0) {
+		/* Like for a SubqueryScan, we need to find the RelOptInfo to get the subroot */
+		RelOptInfo *subqueryRel = find_base_rel(root, udo->tableArgRelId);
+		outerPlan(udo) = set_plan_references(subqueryRel->subroot, outerPlan(udo));
+	}
+
+	return plan;
 }
 
 /*

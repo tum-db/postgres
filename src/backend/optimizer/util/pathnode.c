@@ -2062,6 +2062,30 @@ create_tablefuncscan_path(PlannerInfo *root, RelOptInfo *rel,
 }
 
 /*
+ * create_udo_path
+ *	  Creates a path corresponding to the execution of a UDO.
+ */
+Path *
+create_udo_path(PlannerInfo *root, RelOptInfo *rel, Path *table_arg)
+{
+	UDOPath *udo = makeNode(UDOPath);
+
+	udo->path.pathtype = T_UDO;
+	udo->path.parent = rel;
+	udo->path.pathtarget = rel->reltarget;
+	udo->path.param_info = NULL;
+	udo->path.parallel_aware = false;
+	udo->path.parallel_safe = rel->consider_parallel;
+	udo->path.parallel_workers = 0;
+	udo->path.pathkeys = NIL;	/* result is always unordered */
+	udo->tableArg = table_arg;
+
+	/* TODO UDO cost_tablefuncscan(pathnode, root, rel, pathnode->param_info); */
+
+	return (Path *) udo;
+}
+
+/*
  * create_valuesscan_path
  *	  Creates a path corresponding to a scan of a VALUES list,
  *	  returning the pathnode.

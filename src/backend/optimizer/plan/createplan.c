@@ -119,6 +119,7 @@ static LockRows *create_lockrows_plan(PlannerInfo *root, LockRowsPath *best_path
 static ModifyTable *create_modifytable_plan(PlannerInfo *root, ModifyTablePath *best_path);
 static Limit *create_limit_plan(PlannerInfo *root, LimitPath *best_path,
 								int flags);
+static UDO *create_udo_plan(PlannerInfo *root, UDOPath *best_path);
 static SeqScan *create_seqscan_plan(PlannerInfo *root, Path *best_path,
 									List *tlist, List *scan_clauses);
 static SampleScan *create_samplescan_plan(PlannerInfo *root, Path *best_path,
@@ -535,6 +536,9 @@ create_plan_recurse(PlannerInfo *root, Path *best_path, int flags)
 		case T_GatherMerge:
 			plan = (Plan *) create_gather_merge_plan(root,
 													 (GatherMergePath *) best_path);
+			break;
+		case T_UDO:
+			plan = (Plan *) create_udo_plan(root, (UDOPath *) best_path);
 			break;
 		default:
 			elog(ERROR, "unrecognized node type: %d",
@@ -2810,6 +2814,54 @@ create_limit_plan(PlannerInfo *root, LimitPath *best_path, int flags)
 					  numUniqkeys, uniqColIdx, uniqOperators, uniqCollations);
 
 	copy_generic_path_info(&plan->plan, (Path *) best_path);
+
+	return plan;
+}
+
+/*
+ * create_limit_plan
+ *
+ *	  Create a Limit plan for 'best_path' and (recursively) plans
+ *	  for its subpaths.
+ */
+static UDO *
+create_udo_plan(PlannerInfo *root, UDOPath *best_path)
+{
+	UDO *plan = makeNode(UDO);
+	RelOptInfo *rel = best_path->path.parent;
+	List *qual;
+	Index relid = rel->relid;
+	RangeTblEntry *rte;
+	FuncExpr *fexpr;
+
+	Assert(relid > 0);
+	rte = planner_rt_fetch(relid, root);
+	Assert(rte->rtekind == RTE_UDO);
+	Assert(list_length(rte->functions) == 1);
+	fexpr = linitial_node(FuncExpr, rte->functions);
+
+	plan->plan.targetlist = build_path_tlist(root, (Path *) best_path);
+
+	qual = rel->baserestrictinfo;
+	qual = order_qual_clauses(root, qual);
+	qual = extract_actual_clauses(qual, false);
+	plan->plan.qual = qual;
+
+	plan->plan.lefttree = NULL;
+	plan->plan.righttree = NULL;
+
+	/* Create the plan for the input of the UDO if it exists */
+	if (best_path->tableArg) {
+		outerPlan(plan) = create_plan(rel->subroot, best_path->tableArg);
+		plan->tableArgRelId = relid;
+		Assert(plan->tableArgRelId != 0);
+	} else {
+		plan->tableArgRelId = 0;
+	}
+
+	plan->funcExpr = (Node *) fexpr;
+
+	copy_generic_path_info((Plan *) plan, (Path *) best_path);
 
 	return plan;
 }

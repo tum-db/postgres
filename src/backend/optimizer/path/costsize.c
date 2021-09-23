@@ -5606,6 +5606,20 @@ set_tablefunc_size_estimates(PlannerInfo *root, RelOptInfo *rel)
 }
 
 /*
+ * set_udo_size_estimates
+ *		Set the size estimates for a UDO.
+ * We can't estimate anything from a UDO, so we derive the
+ * estimates from the input if it exists, or just use dummy
+ * values.
+ */
+void
+set_udo_size_estimates(PlannerInfo *root, RelOptInfo *rel)
+{
+	rel->tuples = 100;
+	set_baserel_size_estimates(root, rel);
+}
+
+/*
  * set_values_size_estimates
  *		Set the size estimates for a base relation that is a values list.
  *

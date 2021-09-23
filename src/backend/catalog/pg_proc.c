@@ -28,6 +28,7 @@
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "executor/functions.h"
+#include "executor/udo.h"
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
@@ -957,6 +958,24 @@ fmgr_sql_validator(PG_FUNCTION_ARGS)
 	}
 
 	ReleaseSysCache(tuple);
+
+	PG_RETURN_VOID();
+}
+
+/*
+ * Validator for C++ UDO functions
+ *
+ * Parse it here in order to be sure that it contains no syntax errors.
+ */
+Datum
+fmgr_udocxx_validator(PG_FUNCTION_ARGS)
+{
+	Oid funcoid = PG_GETARG_OID(0);
+
+	if (!CheckFunctionValidatorAccess(fcinfo->flinfo->fn_oid, funcoid))
+		PG_RETURN_VOID();
+
+	udo_cxxudo_analyze_cached(funcoid);
 
 	PG_RETURN_VOID();
 }

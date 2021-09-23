@@ -687,7 +687,8 @@ typedef enum SubLinkType
 	EXPR_SUBLINK,
 	MULTIEXPR_SUBLINK,
 	ARRAY_SUBLINK,
-	CTE_SUBLINK					/* for SubPlans only */
+	CTE_SUBLINK,				/* for SubPlans only */
+	UDO_SUBLINK
 } SubLinkType;
 
 

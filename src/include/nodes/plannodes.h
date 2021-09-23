@@ -1033,6 +1033,17 @@ typedef struct Limit
 	Oid		   *uniqCollations; /* collations for equality comparisons */
 } Limit;
 
+/* ----------------
+ *		UDO node
+ * ----------------
+ */
+typedef struct UDO
+{
+	Plan plan;
+	Node *funcExpr;			/* FuncExpr of the function call */
+	Index tableArgRelId;	/* The index of the range table of the table argument */
+} UDO;
+
 
 /*
  * RowMarkType -

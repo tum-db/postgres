@@ -965,6 +965,17 @@ _outLimit(StringInfo str, const Limit *node)
 }
 
 static void
+_outUDO(StringInfo str, const UDO *node)
+{
+	WRITE_NODE_TYPE("UDO");
+
+	_outPlanInfo(str, (const Plan *) node);
+
+	WRITE_NODE_FIELD(funcExpr);
+	WRITE_UINT_FIELD(tableArgRelId);
+}
+
+static void
 _outNestLoopParam(StringInfo str, const NestLoopParam *node)
 {
 	WRITE_NODE_TYPE("NESTLOOPPARAM");
@@ -2255,6 +2266,17 @@ _outHashPath(StringInfo str, const HashPath *node)
 }
 
 static void
+_outUDOPath(StringInfo str, const UDOPath *node)
+{
+	WRITE_NODE_TYPE("UDOPATH");
+
+	_outPathInfo(str, (const Path *) node);
+
+	WRITE_OID_FIELD(funcOid);
+	WRITE_NODE_FIELD(tableArg);
+}
+
+static void
 _outPlannerGlobal(StringInfo str, const PlannerGlobal *node)
 {
 	WRITE_NODE_TYPE("PLANNERGLOBAL");
@@ -2871,7 +2893,7 @@ _outPLAssignStmt(StringInfo str, const PLAssignStmt *node)
 }
 
 static void
-_outFuncCall(StringInfo str, const FuncCall *node)
+_outFuncCallInfo(StringInfo str, const FuncCall *node)
 {
 	WRITE_NODE_TYPE("FUNCCALL");
 
@@ -2886,6 +2908,24 @@ _outFuncCall(StringInfo str, const FuncCall *node)
 	WRITE_BOOL_FIELD(func_variadic);
 	WRITE_ENUM_FIELD(funcformat, CoercionForm);
 	WRITE_LOCATION_FIELD(location);
+}
+
+static void
+_outFuncCall(StringInfo str, const FuncCall *node)
+{
+	WRITE_NODE_TYPE("FUNCCALL");
+
+	_outFuncCallInfo(str, node);
+}
+
+static void
+_outUDOCall(StringInfo str, const UDOCall *node)
+{
+	WRITE_NODE_TYPE("UDOCALL");
+
+	_outFuncCallInfo(str, (const FuncCall *) node);
+
+	WRITE_NODE_FIELD(table_arg);
 }
 
 static void
@@ -3272,6 +3312,10 @@ _outRangeTblEntry(StringInfo str, const RangeTblEntry *node)
 		case RTE_TABLEFUNC:
 			WRITE_NODE_FIELD(tablefunc);
 			break;
+		case RTE_UDO:
+			WRITE_NODE_FIELD(functions);
+			WRITE_NODE_FIELD(subquery);
+			break;
 		case RTE_VALUES:
 			WRITE_NODE_FIELD(values_lists);
 			WRITE_NODE_FIELD(coltypes);
@@ -3469,6 +3513,14 @@ _outParamRef(StringInfo str, const ParamRef *node)
 	WRITE_NODE_TYPE("PARAMREF");
 
 	WRITE_INT_FIELD(number);
+	WRITE_LOCATION_FIELD(location);
+}
+
+static void
+_outGenericTableType(StringInfo str, const GenericTableType *node)
+{
+	WRITE_NODE_TYPE("GENERICTABLETYPE");
+
 	WRITE_LOCATION_FIELD(location);
 }
 
@@ -3986,6 +4038,9 @@ outNode(StringInfo str, const void *obj)
 			case T_Limit:
 				_outLimit(str, obj);
 				break;
+			case T_UDO:
+				_outUDO(str, obj);
+				break;
 			case T_NestLoopParam:
 				_outNestLoopParam(str, obj);
 				break;
@@ -4268,6 +4323,9 @@ outNode(StringInfo str, const void *obj)
 			case T_HashPath:
 				_outHashPath(str, obj);
 				break;
+			case T_UDOPath:
+				_outUDOPath(str, obj);
+				break;
 			case T_PlannerGlobal:
 				_outPlannerGlobal(str, obj);
 				break;
@@ -4439,6 +4497,9 @@ outNode(StringInfo str, const void *obj)
 			case T_ParamRef:
 				_outParamRef(str, obj);
 				break;
+			case T_GenericTableType:
+				_outGenericTableType(str, obj);
+				break;
 			case T_RawStmt:
 				_outRawStmt(str, obj);
 				break;
@@ -4489,6 +4550,9 @@ outNode(StringInfo str, const void *obj)
 				break;
 			case T_FuncCall:
 				_outFuncCall(str, obj);
+				break;
+			case T_UDOCall:
+				_outUDOCall(str, obj);
 				break;
 			case T_DefElem:
 				_outDefElem(str, obj);

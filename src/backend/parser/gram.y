@@ -497,7 +497,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <node>	def_arg columnElem where_clause where_or_current_clause
 				a_expr b_expr c_expr AexprConst indirection_el opt_slice_bound
 				columnref in_expr having_clause func_table xmltable array_expr
-				OptWhereClause operator_def_arg
+				OptWhereClause operator_def_arg udo_call
 %type <list>	rowsfrom_item rowsfrom_list opt_col_def_list
 %type <boolean> opt_ordinality
 %type <list>	ExclusionConstraintList ExclusionConstraintElem
@@ -7497,7 +7497,7 @@ CreateFunctionStmt:
 					n->replace = $2;
 					n->funcname = $4;
 					n->parameters = $5;
-					n->returnType = $7;
+					n->returnType = (Node *) $7;
 					n->options = $8;
 					n->sql_body = $9;
 					$$ = (Node *)n;
@@ -7506,14 +7506,31 @@ CreateFunctionStmt:
 			  RETURNS TABLE '(' table_func_column_list ')' opt_createfunc_opt_list opt_routine_body
 				{
 					CreateFunctionStmt *n = makeNode(CreateFunctionStmt);
+					TypeName* t;
 					n->is_procedure = false;
 					n->replace = $2;
 					n->funcname = $4;
 					n->parameters = mergeTableFuncParameters($5, $9);
-					n->returnType = TableFuncTypeName($9);
-					n->returnType->location = @7;
+					t = TableFuncTypeName($9);
+					t->location = @7;
+					n->returnType = (Node *) t;
 					n->options = $11;
 					n->sql_body = $12;
+					$$ = (Node *)n;
+				}
+			| CREATE opt_or_replace FUNCTION func_name func_args_with_defaults
+			  RETURNS TABLE opt_createfunc_opt_list opt_routine_body
+				{
+					CreateFunctionStmt *n = makeNode(CreateFunctionStmt);
+					GenericTableType *t = makeNode(GenericTableType);
+					n->is_procedure = false;
+					n->replace = $2;
+					n->funcname = $4;
+					n->parameters = $5;
+					n->returnType = (Node *) t;
+					t->location = @7;
+					n->options = $8;
+					n->sql_body = $9;
 					$$ = (Node *)n;
 				}
 			| CREATE opt_or_replace FUNCTION func_name func_args_with_defaults
@@ -7662,6 +7679,26 @@ func_arg:
 					n->argType = $2;
 					n->mode = $1;
 					n->defexpr = NULL;
+					$$ = n;
+				}
+			| TABLE
+				{
+					TypeName *t = makeNode(TypeName);
+					FunctionParameter* n = makeNode(FunctionParameter);
+
+					t->names = NIL;
+					t->typeOid = RECORDOID;
+					t->setof = false;
+					t->pct_type = false;
+					t->typmods = NIL;
+					t->typemod = -1;
+					t->location = @1;
+
+					n->name = NULL;
+					n->argType = t;
+					n->mode = FUNC_PARAM_DEFAULT;
+					n->defexpr = NULL;
+
 					$$ = n;
 				}
 			| func_type
@@ -12528,6 +12565,16 @@ func_table: func_expr_windowless opt_ordinality
 					/* alias and coldeflist are set by table_ref production */
 					$$ = (Node *) n;
 				}
+			| udo_call
+				{
+					RangeFunction *n = makeNode(RangeFunction);
+					n->lateral = false;
+					n->ordinality = false;
+					n->is_rowsfrom = false;
+					n->functions = list_make1(list_make2($1, NIL));
+					/* alias and coldeflist are set by table_ref production */
+					$$ = (Node *) n;
+				}
 		;
 
 rowsfrom_item: func_expr_windowless opt_col_def_list
@@ -12545,6 +12592,23 @@ opt_col_def_list: AS '(' TableFuncElementList ')'	{ $$ = $3; }
 
 opt_ordinality: WITH_LA ORDINALITY					{ $$ = true; }
 			| /*EMPTY*/								{ $$ = false; }
+		;
+
+udo_call:
+			func_name '(' func_arg_list ',' TABLE select_with_parens ')'
+				{
+					FuncCall *c = makeUDOCall($1, $3, $6,
+											  COERCE_EXPLICIT_CALL,
+											  @1, @6);
+					$$ = (Node *) c;
+				}
+			| func_name '(' TABLE select_with_parens ')'
+				{
+					FuncCall *c = makeUDOCall($1, NIL, $4,
+											  COERCE_EXPLICIT_CALL,
+											  @1, @4);
+					$$ = (Node *) c;
+				}
 		;
 
 

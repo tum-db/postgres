@@ -115,7 +115,8 @@ exprType(const Node *expr)
 											format_type_be(exprType((Node *) tent->expr)))));
 					}
 				}
-				else if (sublink->subLinkType == MULTIEXPR_SUBLINK)
+				else if (sublink->subLinkType == MULTIEXPR_SUBLINK ||
+						 sublink->subLinkType == UDO_SUBLINK)
 				{
 					/* MULTIEXPR is always considered to return RECORD */
 					type = RECORDOID;
@@ -2493,6 +2494,7 @@ range_table_entry_walker(RangeTblEntry *rte,
 				return true;
 			break;
 		case RTE_SUBQUERY:
+		case RTE_UDO:
 			if (!(flags & QTW_IGNORE_RT_SUBQUERIES))
 				if (walker(rte->subquery, context))
 					return true;
@@ -3408,6 +3410,7 @@ range_table_mutator(List *rtable,
 				/* we don't bother to copy eref, aliases, etc; OK? */
 				break;
 			case RTE_SUBQUERY:
+			case RTE_UDO:
 				if (!(flags & QTW_IGNORE_RT_SUBQUERIES))
 				{
 					CHECKFLATCOPY(newrte->subquery, rte->subquery, Query);

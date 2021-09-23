@@ -112,6 +112,7 @@
 #include "executor/nodeTableFuncscan.h"
 #include "executor/nodeTidrangescan.h"
 #include "executor/nodeTidscan.h"
+#include "executor/nodeUDO.h"
 #include "executor/nodeUnique.h"
 #include "executor/nodeValuesscan.h"
 #include "executor/nodeWindowAgg.h"
@@ -379,6 +380,11 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 		case T_Limit:
 			result = (PlanState *) ExecInitLimit((Limit *) node,
 												 estate, eflags);
+			break;
+
+		case T_UDO:
+			result = (PlanState*) ExecInitUDO((UDO *) node,
+											  estate, eflags);
 			break;
 
 		default:
@@ -754,6 +760,10 @@ ExecEndNode(PlanState *node)
 
 		case T_LimitState:
 			ExecEndLimit((LimitState *) node);
+			break;
+
+		case T_UDOState:
+			ExecEndUDO((UDOState *) node);
 			break;
 
 		default:

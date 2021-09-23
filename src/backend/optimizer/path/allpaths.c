@@ -116,6 +116,8 @@ static void set_values_pathlist(PlannerInfo *root, RelOptInfo *rel,
 								RangeTblEntry *rte);
 static void set_tablefunc_pathlist(PlannerInfo *root, RelOptInfo *rel,
 								   RangeTblEntry *rte);
+static void set_udo_pathlist(PlannerInfo *root, RelOptInfo *rel,
+							 RangeTblEntry *rte);
 static void set_cte_pathlist(PlannerInfo *root, RelOptInfo *rel,
 							 RangeTblEntry *rte);
 static void set_namedtuplestore_pathlist(PlannerInfo *root, RelOptInfo *rel,
@@ -428,6 +430,9 @@ set_rel_size(PlannerInfo *root, RelOptInfo *rel,
 			case RTE_TABLEFUNC:
 				set_tablefunc_size_estimates(root, rel);
 				break;
+			case RTE_UDO:
+				set_udo_size_estimates(root, rel);
+				break;
 			case RTE_VALUES:
 				set_values_size_estimates(root, rel);
 				break;
@@ -511,6 +516,9 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 			case RTE_TABLEFUNC:
 				/* Table Function */
 				set_tablefunc_pathlist(root, rel, rte);
+				break;
+			case RTE_UDO:
+				set_udo_pathlist(root, rel, rte);
 				break;
 			case RTE_VALUES:
 				/* Values list */
@@ -704,6 +712,14 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 
 		case RTE_TABLEFUNC:
 			/* not parallel safe */
+			return;
+
+		case RTE_UDO:
+			/*
+			 * The UDO code itself must be thread-safe but the UDO is only
+			 * thread-safe if all inputs are.
+			 */
+			/* TODO UDO */
 			return;
 
 		case RTE_VALUES:
@@ -2410,6 +2426,67 @@ set_tablefunc_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 	/* Generate appropriate path */
 	add_path(rel, create_tablefuncscan_path(root, rel,
 											required_outer));
+}
+
+/*
+ * set_udo_pathlist
+ *		Build the (single) access path for a UDO RTE
+ */
+static void
+set_udo_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
+{
+	Path* table_arg = NULL;
+	FuncExpr *fexpr;
+	ListCell *lc;
+	List *newArgs = NIL;
+
+	Assert(rte->rtekind == RTE_UDO);
+
+	/* Plan the path for the table argument, if any */
+	if (rte->subquery) {
+		PlannerInfo *table_arg_info;
+		RelOptInfo *table_arg_rel;
+
+		table_arg_info = subquery_planner(root->glob, rte->subquery, root,
+										  false, 1.0);
+		rel->subroot = table_arg_info;
+
+		/*
+		 * Plan the table arg and find the optimal plan. We can't do any
+		 * optimization accross the UDO, so we only consider the optimal plan
+		 * for the subquery.
+		 */
+		table_arg_rel = fetch_upper_rel(table_arg_info, UPPERREL_FINAL, NULL);
+		table_arg = get_cheapest_path_for_pathkeys(table_arg_rel->pathlist,
+												   NIL, NULL, TOTAL_COST, false);
+
+		/* We need the entire target list to pass all values to the UDO */
+		table_arg->pathtarget = create_pathtarget(root,
+												  rte->subquery->targetList);
+	}
+
+	/* Make sure that all scalar arguments are constants */
+	fexpr = linitial_node(FuncExpr, rte->functions);
+	foreach (lc, fexpr->args) {
+		Node *arg = lfirst(lc);
+		Node *newArg;
+
+		// Don't evaluate table args
+		if (IsA(arg, SubLink) && ((SubLink *)arg)->subLinkType == UDO_SUBLINK) {
+			newArg = arg;
+		} else {
+			newArg = eval_const_expressions(root, arg);
+			if (!IsA(newArg, Const))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("Scalar arguments of UDO must be constants")));
+		}
+
+		newArgs = lappend(newArgs, newArg);
+	}
+	fexpr->args = newArgs;
+
+	add_path(rel, create_udo_path(root, rel, table_arg));
 }
 
 /*

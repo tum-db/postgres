@@ -6994,6 +6994,9 @@
 { oid => '2248', descr => '(internal)',
   proname => 'fmgr_sql_validator', provolatile => 's', prorettype => 'void',
   proargtypes => 'oid', prosrc => 'fmgr_sql_validator' },
+{ oid => '9374', descr => '(internal)',
+  proname => 'fmgr_udocxx_validator', provolatile => 's', prorettype => 'void',
+  proargtypes => 'oid', prosrc => 'fmgr_udocxx_validator' },
 
 { oid => '2250',
   descr => 'user privilege on database by username, database name',

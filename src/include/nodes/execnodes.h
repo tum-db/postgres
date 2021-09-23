@@ -16,6 +16,7 @@
 
 #include "access/tupconvert.h"
 #include "executor/instrument.h"
+#include "executor/udo.h"
 #include "fmgr.h"
 #include "lib/ilist.h"
 #include "lib/pairingheap.h"
@@ -2639,5 +2640,35 @@ typedef struct LimitState
 								 * option */
 	TupleTableSlot *last_slot;	/* slot for evaluation of ties */
 } LimitState;
+
+typedef enum {
+	UDO_COLLECT_INPUT,
+	UDO_EXTRA_WORK,
+	UDO_POST_PRODUCE,
+	UDO_DONE,
+} UDOStateCond;
+
+typedef struct UDOState
+{
+	PlanState	ps;
+	udo_handle	udoHandle;		/* The handle to the UDO */
+	udo_cxx_functions udoFunctions; /* The function pointers to the UDO */
+	void	   *inputUdoTupleDesc; /* The UDOTupleDesc of the input of the UDO (if any) */
+	TupleDesc	udoDesc;		/* The TupleDesc of the tuples created by the UDO */
+	TupleTableSlot *udoSlot;	/* The slot of the tuples created by the UDO */
+	void	   *udoTupleDesc;	/* The UDOTupleDesc of the output of the UDO */
+	Datum	   *values;			/* The values for the output of the UDO. */
+	bool	   *nullMarkers;	/* The null markers for the output of the UDO.
+								 * Is always false. */
+	uint64		udoSize;		/* The size of the UDO object */
+	void	   *udoState;		/* The storage for the UDO object */
+	void	   *localState;		/* The local state for the UDO */
+	void	   *newStack;		/* The new stack that is used to call the UDO */
+	void	   *jmpStateExec;	/* The jump state of the execute or resume function */
+	void	   *jmpStateCollect; /* The jump state of the function that collects an UDO tuple */
+	void	   *inputTuple;		/* The buffer used to pass tuples to the UDO */
+	UDOStateCond lstate;		/* State machine status */
+	bool		suspended;		/* Is there a suspended call to a UDO function */
+} UDOState;
 
 #endif							/* EXECNODES_H */

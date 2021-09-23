@@ -1904,6 +1904,17 @@ typedef struct LimitPath
 	LimitOption limitOption;	/* FETCH FIRST with ties or exact number */
 } LimitPath;
 
+/*
+ * UDOPath represents a call to a UDO
+ * (i.e. "... from TABLE myfunc(TABLE (select ...))")
+ */
+typedef struct UDOPath
+{
+	Path		path;
+	Oid			funcOid;		/* The OID of the function */
+	Path	   *tableArg;		/* The path of the table argument, if any */
+} UDOPath;
+
 
 /*
  * Restriction clause info.

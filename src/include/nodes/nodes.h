@@ -87,6 +87,7 @@ typedef enum NodeTag
 	T_SetOp,
 	T_LockRows,
 	T_Limit,
+	T_UDO,
 	/* these aren't subclasses of Plan: */
 	T_NestLoopParam,
 	T_PlanRowMark,
@@ -146,6 +147,7 @@ typedef enum NodeTag
 	T_SetOpState,
 	T_LockRowsState,
 	T_LimitState,
+	T_UDOState,
 
 	/*
 	 * TAGS FOR PRIMITIVE NODES (primnodes.h)
@@ -263,6 +265,7 @@ typedef enum NodeTag
 	T_LockRowsPath,
 	T_ModifyTablePath,
 	T_LimitPath,
+	T_UDOPath,
 	/* these aren't subclasses of Path: */
 	T_EquivalenceClass,
 	T_EquivalenceMember,
@@ -457,6 +460,7 @@ typedef enum NodeTag
 	T_RangeTableFuncCol,
 	T_TypeName,
 	T_ColumnDef,
+	T_GenericTableType,
 	T_IndexElem,
 	T_StatsElem,
 	T_Constraint,
@@ -490,6 +494,7 @@ typedef enum NodeTag
 	T_PartitionRangeDatum,
 	T_PartitionCmd,
 	T_VacuumRelation,
+	T_UDOCall,
 
 	/*
 	 * TAGS FOR REPLICATION GRAMMAR PARSE NODES (replnodes.h)

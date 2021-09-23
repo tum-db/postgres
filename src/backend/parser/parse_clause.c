@@ -25,8 +25,11 @@
 #include "catalog/pg_amproc.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
+#include "catalog/pg_language.h"
+#include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
+#include "executor/udo.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
@@ -66,6 +69,9 @@ static ParseNamespaceItem *transformRangeSubselect(ParseState *pstate,
 												   RangeSubselect *r);
 static ParseNamespaceItem *transformRangeFunction(ParseState *pstate,
 												  RangeFunction *r);
+static ParseNamespaceItem *transformUDOFunction(ParseState *pstate,
+												RangeFunction *r,
+												FuncExpr *fexpr);
 static ParseNamespaceItem *transformRangeTableFunc(ParseState *pstate,
 												   RangeTableFunc *t);
 static TableSampleClause *transformRangeTableSample(ParseState *pstate,
@@ -599,6 +605,33 @@ transformRangeFunction(ParseState *pstate, RangeFunction *r)
 					 parser_errposition(pstate,
 										exprLocation(pstate->p_last_srf))));
 
+		/* Check if this is a call to a UDO which needs to be handled
+		 * separately */
+		if (IsA(newfexpr, FuncExpr))
+		{
+			FuncExpr *fexpr = (FuncExpr *) newfexpr;
+			Form_pg_proc func_form;
+			HeapTuple tup;
+
+			tup = SearchSysCacheCopy1(PROCOID, fexpr->funcid);
+			if (!HeapTupleIsValid(tup)) /* should not happen */
+				elog(ERROR, "cache lookup failed for function %u", fexpr->funcid);
+
+			func_form = (Form_pg_proc) GETSTRUCT(tup);
+
+			if (func_form->prolang == UDOCXXlanguageId)
+			{
+				if (r->is_rowsfrom)
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							 errmsg("UDOs cannot be used in ROWS FROM"),
+							 parser_errposition(pstate, fexpr->location)));
+
+				Assert(list_length(r->functions) == 1);
+				return transformUDOFunction(pstate, r, fexpr);
+			}
+		}
+
 		funcexprs = lappend(funcexprs, newfexpr);
 
 		funcnames = lappend(funcnames,
@@ -675,6 +708,174 @@ transformRangeFunction(ParseState *pstate, RangeFunction *r)
 	return addRangeTableEntryForFunction(pstate,
 										 funcnames, funcexprs, coldeflists,
 										 r, is_lateral, true);
+}
+
+/*
+ * transformUDOFunction --- transform a UDO call appearing in FROM
+ */
+static ParseNamespaceItem *
+transformUDOFunction(ParseState *pstate, RangeFunction* r, FuncExpr *fexpr)
+{
+	ListCell *lc;
+	ParseNamespaceItem *nsitem;
+	ParseNamespaceColumn *nscolumns;
+	RangeTblEntry *rte;
+	int rtindex;
+	udo_handle handle;
+
+	rtindex = list_length(pstate->p_rtable) + 1;
+
+	rte = makeNode(RangeTblEntry);
+	rte->rtekind = RTE_UDO;
+
+	/*
+	 * Add the table argument, if any, as subquery
+	 */
+	rte->subquery = NULL;
+	foreach(lc, fexpr->args) {
+		Node *arg = (Node *) lfirst(lc);
+		if (IsA(arg, SubLink) && ((SubLink *) arg)->subLinkType == UDO_SUBLINK) {
+			SubLink *sublink = (SubLink *) arg;
+			Query *query = castNode(Query, sublink->subselect);
+			/* UDOs can have only one table argument */
+			Assert(rte->subquery == NULL);
+			rte->subquery = query;
+		}
+	}
+
+	/*
+	 * Add the function call to the functions list as the function arguments
+	 * need to be processed later
+	 */
+	rte->functions = list_make1(fexpr);
+
+	rte->alias = r->alias;
+
+	/* Add the result columns from the UDO code */
+	handle = udo_cxxudo_analyze_cached(fexpr->funcid);
+	{
+		udo_attribute_descr_array attrs;
+		udo_errno err;
+		const char *aliasname = "udo";
+
+		err = udo_get_output_attributes(handle, &attrs);
+		if (err != 0) {
+			const char* error_message = udo_error_message(handle);
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
+					 errmsg("Invalid attribute in output of C++ UDO: %s",
+							error_message)));
+		}
+
+		nscolumns = (ParseNamespaceColumn *) palloc(
+			attrs.size * sizeof(ParseNamespaceColumn));
+
+		rte->coltypes = NIL;
+		rte->coltypmods = NIL;
+		rte->colcollations = NIL;
+
+		for (size_t i = 0; i < attrs.size; ++i) {
+			Oid attrType = attrs.attributes[i].pgTypeOid;
+			Oid collation;
+
+			if (attrType == TEXTOID)
+				collation = DEFAULT_COLLATION_OID;
+			else
+				collation = InvalidOid;
+
+			nscolumns[i].p_varno = rtindex;
+			nscolumns[i].p_varattno = i + 1;
+			nscolumns[i].p_vartype = attrType;
+			nscolumns[i].p_vartypmod = -1;
+			nscolumns[i].p_varcollid = collation;
+			nscolumns[i].p_varnosyn = rtindex;
+			nscolumns[i].p_varattnosyn = i + 1;
+			nscolumns[i].p_dontexpand = false;
+
+			rte->coltypes = lappend_oid(rte->coltypes, attrType);
+			rte->coltypmods = lappend_int(rte->coltypmods, -1);
+			rte->colcollations = lappend_oid(rte->colcollations, collation);
+		}
+
+		if (r->alias)
+			aliasname = r->alias->aliasname;
+
+		if (r->alias && r->alias->colnames) {
+			if (r->alias->colnames != NIL) {
+				if (list_length(r->alias->colnames) != attrs.size)
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+							 errmsg("Mismatching number of attributes in UDO alias")));
+			}
+			rte->eref = makeAlias(aliasname, r->alias->colnames);
+		} else {
+			List *colnames = NIL;
+
+			for (size_t i = 0; i < attrs.size; ++i) {
+				const char *attrName = attrs.attributes[i].name;
+				colnames = lappend(colnames, makeString(pstrdup(attrName)));
+			}
+
+			rte->eref = makeAlias(aliasname, colnames);
+		}
+	}
+
+	/* Check whether the attributes of the input subquery match */
+	if (rte->subquery) {
+		udo_attribute_descr_array attrs;
+		udo_errno err;
+		ListCell *lc;
+		unsigned i;
+
+		err = udo_get_input_attributes(handle, &attrs);
+		if (err != 0) {
+			const char* error_message = udo_error_message(handle);
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
+					 errmsg("Invalid attribute in input of C++ UDO: %s",
+							error_message)));
+		}
+
+		if (list_length(rte->subquery->targetList) != attrs.size) {
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("Mismatching number of attributes in UDO table argument")));
+		}
+
+		i = 0;
+		foreach(lc, rte->subquery->targetList) {
+			TargetEntry *entry = lfirst_node(TargetEntry, lc);
+			Oid entryType = exprType((Node *) entry->expr);
+
+			Assert(entry->resno == i + 1);
+
+			if (entryType != attrs.attributes[i].pgTypeOid)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("Mismatching type of attribute %u in UDO table argument",
+								i + 1)));
+
+			++i;
+		}
+	}
+
+	rte->lateral = false;
+	rte->inh = false;
+	rte->inFromCl = true;
+
+	pstate->p_rtable = lappend(pstate->p_rtable, rte);
+
+	nsitem = (ParseNamespaceItem *) palloc(sizeof(ParseNamespaceItem));
+	nsitem->p_names = rte->eref;
+	nsitem->p_rte = rte;
+	nsitem->p_rtindex = rtindex;
+	nsitem->p_nscolumns = nscolumns;
+	nsitem->p_rel_visible = true;
+	nsitem->p_cols_visible = true;
+	nsitem->p_lateral_only = false;
+	nsitem->p_lateral_ok = true;
+
+	return nsitem;
 }
 
 /*

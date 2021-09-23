@@ -201,6 +201,7 @@ extern void set_values_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 extern void set_cte_size_estimates(PlannerInfo *root, RelOptInfo *rel,
 								   double cte_rows);
 extern void set_tablefunc_size_estimates(PlannerInfo *root, RelOptInfo *rel);
+extern void set_udo_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 extern void set_namedtuplestore_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 extern void set_result_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 extern void set_foreign_size_estimates(PlannerInfo *root, RelOptInfo *rel);

@@ -110,6 +110,7 @@ extern Path *create_valuesscan_path(PlannerInfo *root, RelOptInfo *rel,
 									Relids required_outer);
 extern Path *create_tablefuncscan_path(PlannerInfo *root, RelOptInfo *rel,
 									   Relids required_outer);
+extern Path *create_udo_path(PlannerInfo *root, RelOptInfo *rel, Path* table_arg);
 extern Path *create_ctescan_path(PlannerInfo *root, RelOptInfo *rel,
 								 Relids required_outer);
 extern Path *create_namedtuplestorescan_path(PlannerInfo *root, RelOptInfo *rel,

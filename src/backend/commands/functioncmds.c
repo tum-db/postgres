@@ -89,14 +89,28 @@
  * condition.)
  */
 static void
-compute_return_type(TypeName *returnType, Oid languageOid,
+compute_return_type(Node *returnType, Oid languageOid,
 					Oid *prorettype_p, bool *returnsSet_p)
 {
+	TypeName   *rettypeName;
 	Oid			rettype;
 	Type		typtup;
 	AclResult	aclresult;
 
-	typtup = LookupTypeName(NULL, returnType, NULL, false);
+	if (IsA(returnType, GenericTableType)) {
+		if (languageOid != UDOCXXlanguageId)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
+					 errmsg("Only UDOs may return TABLE")));
+
+		*prorettype_p = RECORDOID;
+		*returnsSet_p = true;
+		return;
+	}
+
+	rettypeName = castNode(TypeName, returnType);
+
+	typtup = LookupTypeName(NULL, rettypeName, NULL, false);
 
 	if (typtup)
 	{
@@ -106,19 +120,19 @@ compute_return_type(TypeName *returnType, Oid languageOid,
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
 						 errmsg("SQL function cannot return shell type %s",
-								TypeNameToString(returnType))));
+								TypeNameToString(rettypeName))));
 			else
 				ereport(NOTICE,
 						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 						 errmsg("return type %s is only a shell",
-								TypeNameToString(returnType))));
+								TypeNameToString(rettypeName))));
 		}
 		rettype = typeTypeId(typtup);
 		ReleaseSysCache(typtup);
 	}
 	else
 	{
-		char	   *typnam = TypeNameToString(returnType);
+		char	   *typnam = TypeNameToString(rettypeName);
 		Oid			namespaceId;
 		AclResult	aclresult;
 		char	   *typname;
@@ -137,7 +151,7 @@ compute_return_type(TypeName *returnType, Oid languageOid,
 					 errmsg("type \"%s\" does not exist", typnam)));
 
 		/* Reject if there's typmod decoration, too */
-		if (returnType->typmods != NIL)
+		if (rettypeName->typmods != NIL)
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("type modifier cannot be specified for shell type \"%s\"",
@@ -148,7 +162,7 @@ compute_return_type(TypeName *returnType, Oid languageOid,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("type \"%s\" is not yet defined", typnam),
 				 errdetail("Creating a shell type definition.")));
-		namespaceId = QualifiedNameGetCreationNamespace(returnType->names,
+		namespaceId = QualifiedNameGetCreationNamespace(rettypeName->names,
 														&typname);
 		aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(),
 										  ACL_CREATE);
@@ -165,7 +179,7 @@ compute_return_type(TypeName *returnType, Oid languageOid,
 		aclcheck_error_type(aclresult, rettype);
 
 	*prorettype_p = rettype;
-	*returnsSet_p = returnType->setof;
+	*returnsSet_p = rettypeName->setof;
 }
 
 /*
@@ -900,6 +914,19 @@ interpret_AS_clause(Oid languageOid, const char *languageName,
 				*prosrc_str_p = funcname;
 		}
 	}
+	else if (languageOid == UDOCXXlanguageId)
+	{
+		/*
+		 * For UDOs, the source must always be given as '<source code>',
+		 * '<symbol>'
+		 */
+		if (list_length(as) != 2)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
+					 errmsg("UDO functions must be given as '<source code>', '<symbol>'")));
+		*probin_str_p = strVal(linitial(as));
+		*prosrc_str_p = strVal(lsecond(as));
+	}
 	else if (sql_body_in)
 	{
 		SQLFunctionParseInfoPtr pinfo;
@@ -1210,6 +1237,12 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 		prorettype = VOIDOID;
 		returnsSet = false;
 	}
+
+	if (languageOid == UDOCXXlanguageId &&
+		!(stmt->returnType && IsA(stmt->returnType, GenericTableType)))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
+				 errmsg("UDOs must return TABLE")));
 
 	if (list_length(trftypes_list) > 0)
 	{
